@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>我的单词本</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+
+<style>
+body{font-family:-apple-system;background:#ffffff;margin:0;padding:20px}
+h1{text-align:center;font-size:20px}
+input,button{width:100%;padding:12px;margin-top:10px;
+border-radius:10px;border:1px solid #ddd;font-size:16px}
+button{background:black;color:white;border:none}
+.word{font-size:26px;text-align:center;margin:30px 0}
+.small{font-size:14px;color:#555;margin-top:5px}
+.result{text-align:center;font-weight:bold;margin-top:10px}
+</style>
+</head>
+<body>
+
+<h1>📚 我的单词本</h1>
+
+<input id="newWord" placeholder="输入英文单词">
+<input id="newMeaning" placeholder="输入中文意思">
+<button onclick="addWord()">添加单词</button>
+
+<div class="word" id="showWord">点击开始</div>
+<div id="example" class="small"></div>
+
+<input id="answerInput" placeholder="输入中文意思">
+<button onclick="speak()">🔊 发音</button>
+<button onclick="generateExample()">🤖 GPT例句</button>
+<button onclick="checkAnswer()">提交</button>
+<button onclick="nextWord()">下一个</button>
+
+<div class="result" id="result"></div>
+
+<script type="module">
+
+// 🔹 Firebase 配置
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "你的FirebaseKey",
+  authDomain: "你的AuthDomain",
+  projectId: "你的ProjectId"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let words=[];
+let currentWord=null;
+
+async function loadCloud(){
+const snapshot=await getDocs(collection(db,"words"));
+snapshot.forEach(doc=>words.push(doc.data()));
+}
+await loadCloud();
+
+async function addWord(){
+let w=newWord.value.trim();
+let m=newMeaning.value.trim();
+if(!w||!m) return;
+
+let wordData={
+word:w,meaning:m,correct:0,wrong:0,level:0,nextReview:Date.now()
+};
+
+await addDoc(collection(db,"words"),wordData);
+words.push(wordData);
+
+newWord.value="";
+newMeaning.value="";
+alert("添加成功");
+}
+
+function getDue(){
+return words.filter(w=>w.nextReview<=Date.now())
+.sort((a,b)=>b.wrong-a.wrong);
+}
+
+function nextWord(){
+let due=getDue();
+if(due.length===0){alert("今日完成");return;}
+currentWord=due[0];
+showWord.innerText=currentWord.word;
+result.innerText="";
+answerInput.value="";
+example.innerText="";
+}
+
+function checkAnswer(){
+if(!currentWord) return;
+
+if(answerInput.value.trim()===currentWord.meaning){
+result.innerText="✅ 正确";
+currentWord.level++;
+currentWord.correct++;
+}else{
+result.innerText="❌ "+currentWord.meaning;
+currentWord.level=0;
+currentWord.wrong++;
+}
+
+let intervals=[5,30,720,1440,2880,10080];
+let gap=intervals[Math.min(currentWord.level,5)];
+currentWord.nextReview=Date.now()+gap*60000;
+}
+
+function speak(){
+if(!currentWord) return;
+let u=new SpeechSynthesisUtterance(currentWord.word);
+u.lang="en-US";
+speechSynthesis.speak(u);
+}
+
+// 🤖 GPT 例句
+async function generateExample(){
+if(!currentWord) return;
+
+example.innerText="生成中...";
+
+let res=await fetch("https://api.openai.com/v1/chat/completions",{
+method:"POST",
+headers:{
+"Content-Type":"application/json",
+"Authorization":"Bearer 你的OpenAI_API_Key"
+},
+body:JSON.stringify({
+model:"gpt-4o-mini",
+messages:[
+{role:"system",content:"You are an IELTS teacher."},
+{role:"user",content:`Write 2 high-quality IELTS sentences using "${currentWord.word}".`}
+]
+})
+});
+
+let data=await res.json();
+example.innerText=data.choices[0].message.content;
+}
+
+</script>
+
+</body>
+</html>
